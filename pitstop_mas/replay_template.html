@@ -1,0 +1,1103 @@
+<title>Pitstop Multi-Agent Demo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<style>
+/* Layout: a single column of sections. The replay puts two map screens side by side
+   under one shared clock, like a control room; everything below reads as a report. */
+:root {
+  --paper: #f7f6f1;
+  --panel: #fdfcf9;
+  --ink: #14213d;
+  --ink-2: #4b5569;
+  --ink-3: #6f788b;
+  --rule: #d9d8cf;
+  --grid: #e9e8e0;
+  --street: #e4e3da;
+  --hot: rgba(20, 33, 61, 0.055);
+  --a: #eb6834;            /* Policy A: independent choice */
+  --b: #2a78d6;            /* Policy B: reservation board */
+  --bi: #1baf7a;           /* B-info: board shown, FCFS service */
+  --a-wash: rgba(235, 104, 52, 0.13);
+  --b-wash: rgba(42, 120, 214, 0.12);
+  --good: #1d7f45;
+  --bad: #b4372f;
+  --f-display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-data: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0f1626; --panel: #141d31; --ink: #edf0f5; --ink-2: #b9c0cd; --ink-3: #8c95a7;
+    --rule: #2a3550; --grid: #1d2740; --street: #1d2740; --hot: rgba(237, 240, 245, 0.045);
+    --a: #d95926; --b: #3987e5; --bi: #199e70;
+    --a-wash: rgba(217, 89, 38, 0.2); --b-wash: rgba(57, 135, 229, 0.2);
+    --good: #4cb877; --bad: #e0695f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0f1626; --panel: #141d31; --ink: #edf0f5; --ink-2: #b9c0cd; --ink-3: #8c95a7;
+  --rule: #2a3550; --grid: #1d2740; --street: #1d2740; --hot: rgba(237, 240, 245, 0.045);
+  --a: #d95926; --b: #3987e5; --bi: #199e70;
+  --a-wash: rgba(217, 89, 38, 0.2); --b-wash: rgba(57, 135, 229, 0.2);
+  --good: #4cb877; --bad: #e0695f;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font-family: var(--f-body); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+.wrap { max-width: 1180px; margin-inline: auto; }
+section { margin-top: 56px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4.2vw, 42px); line-height: 1.12; max-width: 22ch; }
+h2 { font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; }
+h3 { font-size: 17px; font-family: var(--f-body); font-weight: 600; letter-spacing: 0; }
+p { margin: 0; }
+.eyebrow { font: 500 12px/1.4 var(--f-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.lede { max-width: 68ch; color: var(--ink-2); font-size: 16px; }
+.prose { max-width: 68ch; color: var(--ink-2); }
+.prose strong, .lede strong { color: var(--ink); font-weight: 600; }
+.num, .mono { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+.sec-head { display: grid; gap: 10px; margin-bottom: 22px; }
+code { font-family: var(--f-data); font-size: 0.92em; }
+
+/* header */
+.top { display: grid; gap: 14px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 6px 0 0; padding: 14px 0 0; border-top: 1px solid var(--rule); }
+.facts div { display: grid; gap: 1px; min-width: 0; }
+.facts dt { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
+.facts dd { margin: 0; font-family: var(--f-data); font-size: 14px; }
+
+/* policy swatches */
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: 0; margin-right: 6px; }
+.sw.a { background: var(--a); } .sw.b { background: var(--b); } .sw.bi { background: var(--bi); }
+
+/* transport bar */
+.transport {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px;
+  padding: 12px 14px; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px;
+  margin-bottom: 14px;
+}
+.btn {
+  font: 500 14px/1 var(--f-body); color: var(--ink); background: transparent;
+  border: 1px solid var(--rule); border-radius: 8px; padding: 9px 14px; cursor: pointer;
+}
+.btn:hover { border-color: var(--ink-3); }
+.btn.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); min-width: 92px; }
+.btn:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--b); outline-offset: 2px; }
+.clock { display: grid; gap: 0; }
+.clock .num { font-size: 24px; line-height: 1.1; font-weight: 500; }
+.clock span:first-child { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); }
+.scrub { flex: 1 1 260px; min-width: 0; display: grid; gap: 4px; }
+.scrub input { width: 100%; accent-color: var(--ink); }
+.scrub .ticks { display: flex; justify-content: space-between; font: 11px var(--f-data); color: var(--ink-3); }
+.speed { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+select { font: 14px var(--f-body); color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 8px; }
+
+/* maps */
+.maps { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.map-panel { margin: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; min-width: 0; }
+.map-panel figcaption { padding: 12px 14px 8px; display: grid; gap: 2px; }
+.map-panel figcaption b { font-size: 15px; font-weight: 600; }
+.map-panel figcaption span { font-size: 13px; color: var(--ink-2); }
+.map-panel.a { box-shadow: inset 0 3px 0 var(--a); }
+.map-panel.b { box-shadow: inset 0 3px 0 var(--b); }
+.map-panel svg { display: block; width: 100%; height: auto; max-width: 100%; cursor: pointer; }
+.counters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--rule); }
+.counters div { padding: 9px 12px; display: grid; gap: 1px; border-right: 1px solid var(--grid); min-width: 0; }
+.counters div:nth-child(4n) { border-right: 0; }
+.counters div:nth-child(n+5) { border-top: 1px solid var(--grid); }
+.counters dt { font-size: 11px; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.counters dd { margin: 0; font: 500 18px/1.2 var(--f-data); font-variant-numeric: tabular-nums; }
+.counters dd small { font-size: 12px; color: var(--ink-3); font-weight: 400; }
+
+.glyphs { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+.glyphs svg { vertical-align: -3px; margin-right: 6px; }
+
+/* lower replay panels */
+.below { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 14px; margin-top: 14px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.card h3 { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.card h3 small { font: 400 13px var(--f-data); color: var(--ink-3); }
+.board { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.board li { display: grid; grid-template-columns: 3.2em 4.2em minmax(0, 1fr) auto; gap: 8px; padding: 6px 0; border-top: 1px solid var(--grid); font-size: 13.5px; align-items: baseline; cursor: pointer; }
+.board li:first-child { border-top: 0; }
+.board li:hover { background: var(--b-wash); }
+.board .seq { font-family: var(--f-data); color: var(--ink-3); }
+.board .due { font-family: var(--f-data); color: var(--ink-2); text-align: right; }
+.board .empty { grid-template-columns: 1fr; color: var(--ink-3); cursor: default; }
+.board-note { font-size: 13px; color: var(--ink-3); margin-top: 10px; }
+
+.who { font-size: 14px; color: var(--ink-2); margin-bottom: 12px; }
+.who b { color: var(--ink); }
+.fate { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid var(--grid); }
+.fate-head { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; font-size: 14px; }
+.fate-head b { font-weight: 600; }
+.saw { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 12.5px/1 var(--f-data); padding: 5px 7px; border-radius: 6px; border: 1px solid var(--rule); color: var(--ink-2); white-space: nowrap; }
+.chip.pick.a { border-color: var(--a); background: var(--a-wash); color: var(--ink); }
+.chip.pick.b { border-color: var(--b); background: var(--b-wash); color: var(--ink); }
+.bar { position: relative; height: 16px; background: var(--grid); border-radius: 3px; overflow: hidden; }
+.bar i { position: absolute; top: 0; bottom: 0; }
+.bar i.trav { background: var(--ink-3); opacity: 0.45; }
+.bar i.wait { background: repeating-linear-gradient(135deg, var(--bad) 0 3px, transparent 3px 6px); opacity: 0.75; }
+.bar i.chg.a { background: var(--a); } .bar i.chg.b { background: var(--b); }
+.bar-key { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); }
+.bar-key span::before { content: ""; display: inline-block; width: 12px; height: 9px; margin-right: 5px; vertical-align: 0; border-radius: 2px; }
+.bar-key .k-trav::before { background: var(--ink-3); opacity: 0.45; }
+.bar-key .k-wait::before { background: repeating-linear-gradient(135deg, var(--bad) 0 3px, transparent 3px 6px); }
+.bar-key .k-chg::before { background: var(--ink-2); }
+.verdict { font-size: 13.5px; color: var(--ink-2); }
+
+/* results */
+.headline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.headline .card p { font-size: 14px; color: var(--ink-2); }
+.headline .card h3 { margin-bottom: 6px; }
+.forest { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.forest .card { padding: 12px 14px 8px; }
+.forest .card h3 { margin-bottom: 2px; font-size: 15px; }
+.forest .hint { font-size: 12.5px; color: var(--ink-3); margin-bottom: 4px; }
+.forest svg { display: block; width: 100%; height: auto; }
+.key { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 13px; color: var(--ink-2); margin: 4px 0 14px; }
+.callout { margin-top: 14px; border-left: 3px solid var(--ink); padding: 4px 0 4px 14px; max-width: 76ch; color: var(--ink-2); }
+.callout b { color: var(--ink); }
+details { margin-top: 16px; }
+summary { cursor: pointer; font-weight: 500; }
+.tbl-wrap { overflow-x: auto; margin-top: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-weight: 600; color: var(--ink-2); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; border-bottom-color: var(--rule); }
+td.n { font-family: var(--f-data); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+th.n { text-align: right; }
+
+/* validation */
+.val { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 14px; }
+.tests { list-style: none; margin: 0; padding: 0; display: grid; }
+.tests li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; padding: 7px 0; border-top: 1px solid var(--grid); font-size: 13.5px; align-items: baseline; }
+.tests li:first-child { border-top: 0; }
+.tests .ok { color: var(--good); font-weight: 600; }
+.tests .no { color: var(--bad); font-weight: 600; }
+.ok-t { color: var(--good); font-weight: 600; }
+.no-t { color: var(--bad); font-weight: 600; }
+#defer-table td:nth-child(2) { font-family: var(--f-data); }
+.tests .cnt { font-family: var(--f-data); color: var(--ink-3); font-size: 12.5px; }
+.tests li span:nth-child(2) { overflow-wrap: anywhere; }
+.toy { display: grid; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); font-size: 14px; }
+.toy-row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.toy-row .lbl { min-width: 9.5em; color: var(--ink-2); }
+.pill { font: 500 13px/1 var(--f-data); padding: 5px 8px; border-radius: 999px; border: 1px solid var(--rule); }
+
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.list { margin: 0; padding-left: 18px; color: var(--ink-2); display: grid; gap: 6px; font-size: 14px; }
+pre { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font: 13.5px/1.6 var(--f-data); margin: 0; }
+footer { margin-top: 56px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--ink-3); }
+
+.tip {
+  position: fixed; z-index: 10; pointer-events: none; max-width: 280px;
+  background: var(--ink); color: var(--paper); font-size: 12.5px; line-height: 1.45;
+  padding: 8px 10px; border-radius: 6px;
+}
+.vis-label { font-family: var(--f-body); }
+
+@media (max-width: 900px) {
+  .maps, .below, .val, .two, .headline { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .counters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .counters div:nth-child(4n) { border-right: 1px solid var(--grid); }
+  .counters div:nth-child(2n) { border-right: 0; }
+  .counters div:nth-child(n+3) { border-top: 1px solid var(--grid); }
+  .board li { grid-template-columns: 2.6em 3.8em minmax(0, 1fr) auto; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<header class="wrap top">
+  <p class="eyebrow">Bachelor thesis demo · Multi-Agent Decision Making for EVs in the Pitstop Simulator</p>
+  <h1>Same drivers, same chargers, two ways of choosing a station</h1>
+  <p class="lede" id="lede">Loading the simulation output…</p>
+  <dl class="facts" id="facts"></dl>
+</header>
+
+<section class="wrap" id="replay" style="margin-top:32px">
+  <div class="transport" role="group" aria-label="Replay controls">
+    <button class="btn primary" id="play" type="button">Play</button>
+    <div class="clock"><span>Simulated time</span><span class="num" id="clock">0:00 h</span></div>
+    <div class="scrub">
+      <input type="range" id="time" min="0" max="480" step="0.1" value="0" aria-label="Simulated time in minutes">
+      <div class="ticks" id="ticks"></div>
+    </div>
+    <label class="speed" for="speed">Speed
+      <select id="speed">
+        <option value="4">4 min / s</option>
+        <option value="10" selected>10 min / s</option>
+        <option value="20">20 min / s</option>
+      </select>
+    </label>
+    <button class="btn" id="busiest" type="button">Jump to busiest moment</button>
+  </div>
+
+  <div class="maps">
+    <figure class="map-panel a">
+      <figcaption><b><span class="sw a"></span>A · Independent choice</b>
+        <span>Each driver picks the station with the earliest projected start, using only what the stations show now.</span></figcaption>
+      <svg id="map-A" role="img" aria-label="Map replay for independent choice"></svg>
+      <dl class="counters" id="cnt-A"></dl>
+    </figure>
+    <figure class="map-panel b">
+      <figcaption><b><span class="sw b"></span>B · Reservation board</b>
+        <span>Same rule, but drivers also see who has already booked each station; valid bookings are served in booking order.</span></figcaption>
+      <svg id="map-B" role="img" aria-label="Map replay for the reservation board"></svg>
+      <dl class="counters" id="cnt-B"></dl>
+    </figure>
+  </div>
+  <div class="glyphs" id="glyphs"></div>
+
+  <div class="below">
+    <div class="card">
+      <h3><span><span class="sw b"></span>Reservation board</span><small id="board-time"></small></h3>
+      <ol class="board" id="board"></ol>
+      <p class="board-note">Bookings of drivers still on the road. Policy A has no board, so its drivers cannot see these vehicles coming.</p>
+    </div>
+    <div class="card">
+      <h3><span>Selected driver</span><small>click any vehicle on either map</small></h3>
+      <div id="inspect"></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="results">
+  <div class="sec-head">
+    <p class="eyebrow">Paired evaluation</p>
+    <h2 id="res-title">Across all scenarios</h2>
+    <p class="prose" id="res-intro"></p>
+  </div>
+  <div class="headline" id="headline"></div>
+  <div class="key">
+    <span><span class="sw b"></span>B − A: reservation board vs independent</span>
+    <span><span class="sw bi"></span>B-info − A: board shown, FCFS service (information effect only)</span>
+    <span>Dot: mean paired difference · line: 95% CI</span>
+  </div>
+  <div class="forest" id="forest"></div>
+  <p class="callout" id="paired-note"></p>
+  <details>
+    <summary>Show the numbers as a table</summary>
+    <div class="tbl-wrap"><table id="res-table"></table></div>
+  </details>
+</section>
+
+<section class="wrap" id="defer">
+  <div class="sec-head">
+    <p class="eyebrow">Decisions over time</p>
+    <h2>Deciding later: the defer action</h2>
+    <p class="prose" id="defer-intro">An EV may wait where it is and decide again with newer information. Rule used here: if the EV would queue at least <span class="mono" id="defer-step">5</span> min at its best station anyway, it waits at its own spot instead and decides again after that time, at most <span class="mono" id="defer-max">3</span> times. It books nothing while it waits, its delay d keeps counting from the original request, and the time spent waiting uses up its patience.</p>
+  </div>
+  <div class="tbl-wrap card"><table id="defer-table"></table></div>
+  <p class="callout" id="defer-note"></p>
+</section>
+
+<section class="wrap" id="learned">
+  <div class="sec-head">
+    <p class="eyebrow">Learned decisions</p>
+    <h2>A learned policy: parameter-shared PPO</h2>
+    <p class="prose" id="ppo-intro">Every EV uses the same small neural network to choose a station or defer, from the same observation the PettingZoo environment gives any controller. Its reward is minus its own access delay, the same objective the rules use. It is trained on scenarios that are never used for evaluation, then run without exploration on the evaluation scenarios above.</p>
+  </div>
+  <div class="forest" id="ppo-curves"></div>
+  <div class="tbl-wrap card" style="margin-top:14px"><table id="ppo-table"></table></div>
+  <p class="callout" id="ppo-note"></p>
+</section>
+
+<section class="wrap" id="sensitivity">
+  <div class="sec-head">
+    <p class="eyebrow">Robustness</p>
+    <h2>Do the conclusions depend on the method values?</h2>
+    <p class="prose">The A-versus-B comparison repeated with other demand levels, other patience ranges and other waiting thresholds, on the same evaluation seeds. Fixed values are marked.</p>
+  </div>
+  <div class="card"><h3>Demand ρ (no outages)</h3><div class="tbl-wrap"><table id="sens-rho"></table></div></div>
+  <div class="card" style="margin-top:14px"><h3>Patience (high demand)</h3><div class="tbl-wrap"><table id="sens-pat"></table></div></div>
+  <div class="card" style="margin-top:14px"><h3>Waiting threshold τ</h3><div class="tbl-wrap"><table id="sens-tau"></table></div></div>
+  <p class="callout" id="sens-note"></p>
+</section>
+
+<section class="wrap" id="validation">
+  <div class="sec-head">
+    <p class="eyebrow">Validation before experiments</p>
+    <h2>The simulator is checked against queueing theory and its own rules</h2>
+    <p class="prose">The station and queue code is the same code the experiments use. Driven with Poisson arrivals and exponential charging times, one station must reproduce the Erlang C waiting times plotted in the background chapter.</p>
+  </div>
+  <div class="val">
+    <div class="card">
+      <h3><span>Mean queue wait against utilisation</span><small>W<sub>q</sub> in units of 1/μ</small></h3>
+      <svg id="erlang" viewBox="0 0 600 330" role="img" aria-label="Erlang C curves with simulated points"></svg>
+      <p class="board-note" id="erlang-note"></p>
+    </div>
+    <div class="card">
+      <h3><span>Validation tests</span><small id="test-sum"></small></h3>
+      <ul class="tests" id="tests"></ul>
+      <div class="toy" id="toy"></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="pettingzoo">
+  <div class="sec-head">
+    <p class="eyebrow">Multi-agent interface</p>
+    <h2>The same simulator as a PettingZoo environment</h2>
+    <p class="prose">PettingZoo is the standard interface between multi-agent learning code and an environment. The simulation core is unchanged: the environment pauses it whenever an EV must decide, hands that EV its observation, applies its action and runs on to the next decision. A learned policy can therefore replace the decision rule while everything else stays identical.</p>
+  </div>
+  <div class="two">
+    <div class="card">
+      <h3>Agent definition</h3>
+      <div class="tbl-wrap"><table>
+        <tbody>
+          <tr><th>Agents</th><td>One per charging request. An EV joins when its need appears and leaves once it starts charging, gives up, or the run ends.</td></tr>
+          <tr><th>Turn order</th><td>One EV at a time, in the simulator's event order (PettingZoo AEC).</td></tr>
+          <tr><th>Observation</th><td>Per station: reachable, travel time, projected start, queue length, idle chargers, EVs on their way (board settings only), charger power. Own: charge level, time since request, deferrals used, clock.</td></tr>
+          <tr><th>Action</th><td>One of the stations, or defer. A mask marks unreachable stations and, outside A_d / B_d, the defer action.</td></tr>
+          <tr><th>Reward</th><td>Paid when access is settled: minus the access delay d in hours; giving up adds a 2-hour penalty.</td></tr>
+          <tr><th>Settings</th><td>A, B_info, B, A_d, B_d fix what EVs see and how stations serve; only the decision comes from the agent.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h3><span>Same results through PettingZoo</span><small id="env-scn"></small></h3>
+      <div class="tbl-wrap"><table id="env-table"></table></div>
+      <p class="board-note" id="env-note"></p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="contract">
+  <div class="sec-head">
+    <p class="eyebrow">Design decisions in the code</p>
+    <h2>Reservation contract and demo assumptions</h2>
+    <p class="prose">The background chapter says the contract must be fixed before evaluation. This is the version implemented in the demo; every value is a demo default that the methodology chapter can still change.</p>
+  </div>
+  <div class="two">
+    <div class="card">
+      <h3>Board service contract</h3>
+      <div class="tbl-wrap"><table>
+        <tbody>
+          <tr><th>Resource booked</th><td>A place at a station. Vehicles choose stations, not chargers.</td></tr>
+          <tr><th>Visibility</th><td>A booking is visible to every later decision immediately.</td></tr>
+          <tr><th>Validity</th><td>From booking until the vehicle arrives.</td></tr>
+          <tr><th>Arrival tolerance</th><td id="tol-cell">10 min after the expected arrival.</td></tr>
+          <tr><th>Expiry / no-show</th><td>An unused booking lapses at its deadline; the driver becomes a walk-in.</td></tr>
+          <tr><th>Cancellation</th><td>A driver who leaves the queue frees the place.</td></tr>
+          <tr><th>Conflicts</th><td>Decisions are processed one at a time in a fixed event order, ties by request id, so two bookings never race.</td></tr>
+          <tr><th>Service rule</th><td>B: valid bookings in booking order, then walk-ins by arrival. B-info: plain FCFS. Both never hold a charger idle while a vehicle is present.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h3>Method values, fixed before the final run</h3>
+      <ul class="list">
+        <li><b>Warm-up.</b> Each run starts with empty stations. Requests in the first <span id="mv-warm">4</span> h are simulated but not counted; Welch's procedure showed waiting settles within about 3.5 h at high demand.</li>
+        <li><b>Measured window.</b> Requests made in the next <span id="mv-obs">6</span> h are counted; the run continues 2 h longer so their sessions can finish.</li>
+        <li><b>Threshold τ</b> = <span id="tau-cell">15</span> min of queue waiting counts as excessive. Shares above 5, 10 and 30 min are also reported.</li>
+        <li><b>Patience.</b> A driver leaves the queue after <span id="mv-pat">15–60</span> min of waiting (uniform), the medium waiting tolerance in a 2024 survey of BEV drivers.</li>
+        <li><b>Demand levels.</b> Normal ρ = 0.6, high ρ = 0.9, reduced capacity: normal demand with 3 of 10 chargers out of service for the whole run.</li>
+        <li><b>Seeds.</b> The evaluation scenarios use a seed set never used while these values were chosen.</li>
+        <li><b>Still open.</b> The hold rule; a centralised critic (MAPPO) for the learned policy.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h3>What came from the earlier Pitstop EV adaptation, and what changed</h3>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Part</th><th>Status</th><th>Detail</th></tr></thead>
+      <tbody>
+        <tr><td>Energy use</td><td>Kept</td><td>0.18 kWh/km with the SOC factor 1 + (1 − SOC)·0.05 from <code>env/gym_ev_env.py</code>. Driving to the station now uses energy (issue 4).</td></tr>
+        <tr><td>Charger power</td><td>Kept</td><td>DC fast 50 kW and ultra-fast 150 kW from the same table.</td></tr>
+        <tr><td>Charging time</td><td>Fixed</td><td>Integral of energy over power with the 0.95 / 1.0 / 0.6 SOC bands applied band by band; no <code>time_multiplier</code>. A faster charger now always delivers the same energy in less time (issue 1).</td></tr>
+        <tr><td>Vehicle batteries</td><td>Fixed</td><td>62–88 kWh per model reach the simulation; the old environment used 75 kWh for every car (issue 5).</td></tr>
+        <tr><td>Seeding</td><td>Fixed</td><td>All randomness is drawn once per scenario from its own generator; policies use none (issue 2).</td></tr>
+        <tr><td>Statistics</td><td>Fixed</td><td>Paired t-test and paired CI on matched scenarios instead of independent-samples tests (issue 8).</td></tr>
+        <tr><td>Stations, queues, board</td><td>New</td><td>Finite chargers, FCFS queues, outages, reneging, reservation board, scenario generator, paired runner, validation tests.</td></tr>
+        <tr><td>Defer action</td><td>New</td><td>EVs can wait and decide again (policies A_d and B_d); the old environment had one decision per segment.</td></tr>
+        <tr><td>Agent interface</td><td>New</td><td>PettingZoo multi-agent environment on the same core. The old environment was a single-agent Gymnasium environment.</td></tr>
+        <tr><td>Learned policy</td><td>New</td><td>Parameter-shared PPO for many EVs with delayed rewards (NumPy). The old Q-learning and Stable-Baselines3 PPO code trains one vehicle and was not reused.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section class="wrap" id="run">
+  <div class="sec-head">
+    <p class="eyebrow">Reproducibility</p>
+    <h2>Run it on your own machine</h2>
+    <p class="prose">Every number on this page comes from one command. The page itself is written by that command from the run's output.</p>
+  </div>
+<pre>pip install -r requirements.txt  # numpy scipy pandas pytest pettingzoo gymnasium
+python run_demo.py               # tests, Erlang C check, 30 paired scenarios per level, this page
+python run_demo.py --m 10        # quicker run
+python -m pytest -q tests        # validation tests only
+
+# use the PettingZoo environment from your own code
+from pitstop_mas.env import env
+e = env(setting="B_d", level="high")
+e.reset(seed=0)
+for agent in e.agent_iter():
+    obs, reward, done, cut, info = e.last()
+    action = None if (done or cut) else my_policy(obs)   # obs["action_mask"] marks legal actions
+    e.step(action)
+
+results/runs.csv            one row per level × scenario × policy
+results/summary.json        paired differences, CIs, p-values
+results/replay.json         per-request log of the replayed scenario
+results/env_check.json      PettingZoo check
+results/pitstop_demo.html   this page</pre>
+</section>
+
+<footer class="wrap" id="foot"></footer>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const D = /*__DATA__*/null;
+(function () {
+  if (!D) { document.getElementById("lede").textContent = "No data: open the copy in results/ written by run_demo.py."; return; }
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fin = (x) => x !== null && x !== undefined && isFinite(x);
+  const f = (x, nd = 1) => (fin(x) ? Number(x).toFixed(nd) : "–");
+  const fs = (x, nd = 2) => (fin(x) ? (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(nd) : "–");
+  const hm = (m) => { const h = Math.floor(m / 60), mm = Math.floor(m % 60); return h + ":" + String(mm).padStart(2, "0"); };
+  const LEVEL = { normal: "Normal demand", high: "High demand", reduced: "Reduced capacity" };
+  const TYPE = { dc_fast: "DC 50 kW", ultra_fast: "Ultra 150 kW", level2: "AC 7 kW" };
+
+  const R = D.replay, SC = R.scenario, ST = R.stations, T_END = SC.t_end, TAU = SC.tau;
+  const nameOf = {}; ST.forEach((s) => (nameOf[s.sid] = s.name));
+  const nReq = R.runs.A.records.length;
+  const nCh = ST.reduce((a, s) => a + s.c, 0);
+
+  // ---------------------------------------------------------------- header
+  $("#lede").innerHTML =
+    `${nReq} electric vehicles need charging over ${f(SC.t_last / 60, 0)} hours in a ${SC.area_km} × ${SC.area_km} km city with ${ST.length} stations and ${nCh} chargers. The first ${f(SC.t_warm / 60, 0)} hours are warm-up; results count the requests made after it. ` +
+    `Both maps replay the <strong>same pre-generated requests</strong> from the Python simulator. On the left every driver decides alone; on the right the same drivers also see a shared reservation board.`;
+  const facts = [
+    ["Replayed scenario", `${LEVEL[SC.level]} · #${SC.index}`],
+    ["Measured requests", `${hm(SC.t_warm)}–${hm(SC.t_last)} h`],
+    ["Utilisation ρ", f(SC.rho, 2)],
+    ["Arrival rate", `${f(SC.rate_per_hour, 1)} / h`],
+    ["Why this one", "median A–B difference"],
+    ["Scenario digest", SC.digest],
+    ["Generated", D.generated],
+  ];
+  $("#facts").innerHTML = facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
+  $("#tol-cell").textContent = `${SC.tolerance} min after the expected arrival.`;
+  $("#tau-cell").textContent = TAU;
+  $("#mv-warm").textContent = f(D.config.t_warm / 60, 0);
+  $("#mv-obs").textContent = f(D.config.t_obs / 60, 0);
+  if (D.config.patience) $("#mv-pat").textContent = `${D.config.patience[0]}–${D.config.patience[1]}`;
+
+  // ---------------------------------------------------------------- prepare runs
+  function outAt(sid, t) { let n = 0; R.outages.forEach((o) => { if (o.sid === sid && o.t0 <= t && t < o.t1) n += o.n; }); return n; }
+  function phase(r, t) {
+    if (r.tn > t) return "future";
+    if (r.sid === null) return t < r.tn + 4 ? "stranded" : "gone";
+    if (r.ta === null || t < r.ta) return "travel";
+    if (r.ts !== null) {
+      if (t < r.ts) return "queue";
+      if (r.te === null || t < r.te) return "charge";
+      return t < r.te + 3 ? "justdone" : "done";
+    }
+    if (r.tl !== null && t >= r.tl) return t < r.tl + 4 ? "justleft" : "left";
+    return "queue";
+  }
+  function prep(key) {
+    const run = R.runs[key], recs = run.records, by = {};
+    recs.forEach((r) => (by[r.rid] = r));
+    const cell = {};
+    ST.forEach((st) => {
+      const free = new Array(st.c).fill(-Infinity);
+      recs.filter((r) => r.sid === st.sid && r.ts !== null).sort((a, b) => a.ts - b.ts || a.rid - b.rid).forEach((r) => {
+        let k = free.findIndex((v) => v <= r.ts + 1e-6);
+        if (k < 0) k = free.indexOf(Math.min(...free));
+        cell[r.rid] = k; free[k] = r.te === null ? Infinity : r.te;
+      });
+    });
+    const book = {};
+    run.board_log.forEach(([t, e, rid, sid, seq]) => {
+      if (e === "book") book[rid] = { t0: t, t1: Infinity, sid, seq, end: null };
+      else if (book[rid] && book[rid].end === null) { book[rid].t1 = t; book[rid].end = e; }
+    });
+    // exact idle-while-queued integral over the piecewise-constant state
+    const times = new Set([0, T_END]);
+    recs.forEach((r) => ["tn", "ta", "ts", "te", "tl"].forEach((k) => { if (fin(r[k]) && r[k] <= T_END) times.add(r[k]); }));
+    R.outages.forEach((o) => { times.add(Math.min(o.t0, T_END)); times.add(Math.min(o.t1, T_END)); });
+    const tt = [...times].sort((a, b) => a - b), cum = [0];
+    for (let i = 1; i < tt.length; i++) {
+      const mid = (tt[i - 1] + tt[i]) / 2; let anyQ = false, idle = 0;
+      ST.forEach((st) => {
+        let q = 0, busy = 0;
+        recs.forEach((r) => {
+          if (r.sid !== st.sid) return;
+          const p = phase(r, mid);
+          if (p === "queue") q++; else if (p === "charge") busy++;
+        });
+        if (q) anyQ = true;
+        idle += Math.max(0, st.c - outAt(st.sid, mid) - busy);
+      });
+      cum.push(cum[i - 1] + (anyQ ? (tt[i] - tt[i - 1]) * idle : 0));
+    }
+    return { key, run, recs, by, cell, book, tt, cum };
+  }
+  const P = { A: prep("A"), B: prep("B") };
+  function idleAt(p, t) {
+    const { tt, cum } = p; let lo = 0, hi = tt.length - 1;
+    if (t >= tt[hi]) return cum[hi];
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tt[m] <= t) lo = m; else hi = m; }
+    // inside [tt[lo], tt[hi]) the rate is constant
+    const rate = (cum[hi] - cum[lo]) / (tt[hi] - tt[lo] || 1);
+    return cum[lo] + rate * (t - tt[lo]);
+  }
+
+  // ---------------------------------------------------------------- map geometry
+  const KM = 40, PAD = 26, VB = SC.area_km * KM + 2 * PAD;
+  const X = (x) => PAD + x * KM, Y = (y) => PAD + (SC.area_km - y) * KM;
+  const CELL = 13, CGAP = 3;
+  const geo = {};
+  ST.forEach((s) => {
+    const w = s.c * (CELL + CGAP) - CGAP + 10, h = CELL + 10;
+    geo[s.sid] = { cx: X(s.x), cy: Y(s.y), w, h, x0: X(s.x) - w / 2, y0: Y(s.y) - h / 2 };
+  });
+  function queueSlot(sid, i) {
+    const g = geo[sid], per = 8, row = Math.floor(i / per), col = i % per;
+    return [g.cx - ((per - 1) * 10) / 2 + col * 10, g.y0 + g.h + 37 + row * 10];
+  }
+
+  function staticMap(key) {
+    const col = key === "A" ? "var(--a)" : "var(--b)";
+    let s = `<defs><pattern id="hatch-${key}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="var(--panel)"/><line x1="0" y1="0" x2="0" y2="5" stroke="var(--ink-3)" stroke-width="1.6"/></pattern>` +
+      `<radialGradient id="hot-${key}"><stop offset="0" stop-color="var(--ink)" stop-opacity="0.09"/><stop offset="1" stop-color="var(--ink)" stop-opacity="0"/></radialGradient></defs>`;
+    s += `<rect x="0" y="0" width="${VB}" height="${VB}" fill="var(--panel)"/>`;
+    for (let k = 0; k <= SC.area_km; k++) {
+      const w = k % 3 === 0 ? 1.4 : 0.8;
+      s += `<line x1="${X(k)}" y1="${Y(0)}" x2="${X(k)}" y2="${Y(SC.area_km)}" stroke="var(--street)" stroke-width="${w}"/>`;
+      s += `<line x1="${X(0)}" y1="${Y(k)}" x2="${X(SC.area_km)}" y2="${Y(k)}" stroke="var(--street)" stroke-width="${w}"/>`;
+    }
+    s += `<circle cx="${X(6)}" cy="${Y(6)}" r="${2.6 * KM}" fill="url(#hot-${key})"/>`;
+    s += `<text x="${X(6)}" y="${Y(6) - 2.25 * KM}" text-anchor="middle" font-size="10.5" fill="var(--ink-3)" class="vis-label" letter-spacing="0.06em">DEMAND HOTSPOT</text>`;
+    s += `<g transform="translate(${X(0.3)},${Y(0.35)})"><line x1="0" y1="0" x2="${2 * KM}" y2="0" stroke="var(--ink-3)" stroke-width="1.5"/><line x1="0" y1="-4" x2="0" y2="4" stroke="var(--ink-3)"/><line x1="${2 * KM}" y1="-4" x2="${2 * KM}" y2="4" stroke="var(--ink-3)"/><text x="${KM}" y="-6" text-anchor="middle" font-size="10" fill="var(--ink-3)" class="vis-label">2 km</text></g>`;
+    ST.forEach((st) => {
+      const g = geo[st.sid];
+      s += `<rect x="${g.x0}" y="${g.y0}" width="${g.w}" height="${g.h}" rx="4" fill="var(--panel)" stroke="var(--ink)" stroke-width="1.4"/>`;
+      s += `<text x="${g.cx}" y="${g.y0 + g.h + 13}" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)" class="vis-label">${esc(st.name)}</text>`;
+      s += `<text x="${g.cx}" y="${g.y0 + g.h + 24}" text-anchor="middle" font-size="9.5" fill="var(--ink-3)" class="vis-label">${TYPE[st.type] || st.type} × ${st.c}</text>`;
+    });
+    s += `<g id="dyn-${key}"></g>`;
+    const svg = document.getElementById("map-" + key);
+    svg.setAttribute("viewBox", `0 0 ${VB} ${VB}`);
+    svg.innerHTML = s;
+    return { svg, dyn: document.getElementById("dyn-" + key), col };
+  }
+  const M = { A: staticMap("A"), B: staticMap("B") };
+
+  // ---------------------------------------------------------------- state & drawing
+  let T = 0, playing = false, selected = null, last = null;
+
+  function counters(p, t) {
+    const c = { travel: 0, queue: 0, charge: 0, done: 0, left: 0 }, ws = [];
+    p.recs.forEach((r) => {
+      const ph = phase(r, t);
+      if (ph === "travel") c.travel++;
+      else if (ph === "queue") c.queue++;
+      else if (ph === "charge") c.charge++;
+      else if (ph === "done" || ph === "justdone") c.done++;
+      else if (ph === "left" || ph === "justleft") c.left++;
+      if (r.ts !== null && r.ts <= t && r.tn >= SC.t_warm && r.tn < SC.t_last) ws.push(r.ts - r.ta);
+    });
+    const mw = ws.length ? ws.reduce((a, b) => a + b, 0) / ws.length : null;
+    const ex = ws.length ? ws.filter((w) => w > TAU).length / ws.length : null;
+    return { ...c, mw, ex, n: ws.length };
+  }
+
+  function draw(key, t) {
+    const p = P[key], m = M[key], col = m.col;
+    let s = "";
+    const queues = {}; ST.forEach((st) => (queues[st.sid] = []));
+    const busyCells = {};
+    p.recs.forEach((r) => {
+      const ph = phase(r, t);
+      if (ph === "travel") {
+        const g = geo[r.sid], k = Math.min(1, Math.max(0, (t - r.tn) / ((r.ta ?? T_END) - r.tn || 1)));
+        const x = X(r.x) + (g.cx - X(r.x)) * k, y = Y(r.y) + (g.cy - Y(r.y)) * k;
+        s += `<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${g.cx}" y2="${g.cy}" stroke="${col}" stroke-opacity="0.4" stroke-width="1.3" stroke-dasharray="3 3"/>`;
+        if (t - r.tn < 2.5) s += `<circle cx="${X(r.x)}" cy="${Y(r.y)}" r="${6 + (t - r.tn) * 4}" fill="none" stroke="${col}" stroke-opacity="${Math.max(0, 0.8 - (t - r.tn) * 0.3)}"/>`;
+        s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4.6" fill="${col}" stroke="var(--panel)" stroke-width="1.5" data-rid="${r.rid}"/>`;
+        if (r.rid === selected) s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="none" stroke="var(--ink)" stroke-width="2"/>`;
+      } else if (ph === "queue") {
+        queues[r.sid].push(r);
+      } else if (ph === "charge") {
+        busyCells[r.sid + ":" + p.cell[r.rid]] = r;
+      } else if (ph === "justleft") {
+        const g = geo[r.sid];
+        s += `<text x="${g.x0 - 6}" y="${g.cy + 4}" text-anchor="end" font-size="11" fill="var(--bad)" class="vis-label">left</text>`;
+      } else if (ph === "stranded") {
+        s += `<circle cx="${X(r.x)}" cy="${Y(r.y)}" r="5" fill="none" stroke="var(--bad)" stroke-width="1.5"/>`;
+      }
+    });
+    ST.forEach((st) => {
+      const g = geo[st.sid], out = outAt(st.sid, t);
+      for (let i = 0; i < st.c; i++) {
+        const x = g.x0 + 5 + i * (CELL + CGAP), y = g.y0 + 5, r = busyCells[st.sid + ":" + i];
+        if (r) {
+          const prog = Math.min(1, (t - r.ts) / ((r.te ?? T_END) - r.ts || 1));
+          s += `<rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="2" fill="${col}" data-rid="${r.rid}"/>`;
+          s += `<rect x="${x}" y="${y + CELL - 2.5}" width="${(CELL * prog).toFixed(1)}" height="2.5" fill="var(--panel)" opacity="0.85" pointer-events="none"/>`;
+          if (r.rid === selected) s += `<rect x="${x - 3}" y="${y - 3}" width="${CELL + 6}" height="${CELL + 6}" rx="3" fill="none" stroke="var(--ink)" stroke-width="2"/>`;
+        } else if (i >= st.c - out) {
+          s += `<rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="2" fill="url(#hatch-${key})" stroke="var(--ink-3)"/>`;
+        } else {
+          s += `<rect x="${x + 0.5}" y="${y + 0.5}" width="${CELL - 1}" height="${CELL - 1}" rx="2" fill="none" stroke="var(--ink-3)" stroke-dasharray="2 2"/>`;
+        }
+      }
+      const q = queues[st.sid].sort((a, b) => {
+        const ka = key === "B" && a.ent ? [0, a.bseq] : [1, a.ta], kb = key === "B" && b.ent ? [0, b.bseq] : [1, b.ta];
+        return ka[0] - kb[0] || ka[1] - kb[1];
+      });
+      q.forEach((r, i) => {
+        const [x, y] = queueSlot(st.sid, i);
+        s += `<circle cx="${x}" cy="${y}" r="4" fill="${col}" stroke="var(--panel)" stroke-width="1.2" data-rid="${r.rid}"/>`;
+        if (r.rid === selected) s += `<circle cx="${x}" cy="${y}" r="7.5" fill="none" stroke="var(--ink)" stroke-width="2"/>`;
+      });
+      if (q.length) {
+        const [x, y] = queueSlot(st.sid, Math.min(q.length, 8) - 1);
+        s += `<text x="${x + 9}" y="${y + 4}" font-size="11" font-weight="600" fill="var(--ink)" class="vis-label">${q.length} waiting</text>`;
+      }
+    });
+    m.dyn.innerHTML = s;
+  }
+
+  function drawCounters(key, t) {
+    const c = counters(P[key], t);
+    const items = [
+      ["On the road", c.travel],
+      ["Waiting", c.queue],
+      ["Charging", c.charge],
+      ["Done", c.done],
+      ["Left queue", c.left],
+      ["Mean wait w", fin(c.mw) ? `${f(c.mw, 1)}<small> min</small>` : "–"],
+      [`Wait > ${TAU} min`, fin(c.ex) ? `${f(c.ex * 100, 0)}<small> %</small>` : "–"],
+      ["Idle while queued", `${f(idleAt(P[key], t), 0)}<small> ch·min</small>`],
+    ];
+    document.getElementById("cnt-" + key).innerHTML = items.map(([k, v]) => `<div><dt title="${esc(k)}">${k}</dt><dd>${v}</dd></div>`).join("");
+  }
+
+  function drawBoard(t) {
+    $("#board-time").textContent = "at " + hm(t) + " h";
+    const p = P.B, rows = Object.entries(p.book).filter(([, b]) => b.t0 <= t && t < b.t1).map(([rid, b]) => ({ rid: +rid, ...b })).sort((a, b) => a.seq - b.seq);
+    if (!rows.length) { $("#board").innerHTML = `<li class="empty">No driver is on the way to a station right now.</li>`; return; }
+    const shown = rows.slice(0, 7);
+    $("#board").innerHTML = shown.map((b) => {
+      const r = p.by[b.rid], due = r.tae - t;
+      return `<li data-rid="${b.rid}"><span class="seq">#${b.seq}</span><span>EV ${b.rid}</span><span>→ ${esc(nameOf[b.sid])}</span><span class="due">${due >= 0 ? "due in " + f(due, 0) + " min" : "late " + f(-due, 0) + " min"}</span></li>`;
+    }).join("") + (rows.length > shown.length ? `<li class="empty">+ ${rows.length - shown.length} more bookings</li>` : "");
+  }
+
+  function fateHTML(key, rid, scale) {
+    const p = P[key], r = p.by[rid], cls = key === "A" ? "a" : "b", label = key === "A" ? "A · Independent" : "B · Reservation board";
+    if (r.sid === null) return `<div class="fate"><div class="fate-head"><b><span class="sw ${cls}"></span>${label}</b><span>No station reachable with the remaining charge.</span></div></div>`;
+    const seen = Object.entries(r.seen || {}).map(([sid, est]) => ({ sid: +sid, rel: est - r.tn })).sort((a, b) => a.rel - b.rel);
+    const chips = seen.map((o) => `<span class="chip ${o.sid === r.sid ? "pick " + cls : ""}">${esc(nameOf[o.sid])} ${fin(o.rel) ? "+" + f(o.rel, 0) : "∞"}</span>`).join("");
+    const travel = (r.ta ?? T_END) - r.tn;
+    const wait = r.ts !== null ? r.ts - r.ta : r.tl !== null ? r.tl - r.ta : r.ta !== null ? T_END - r.ta : 0;
+    const chg = r.ts !== null ? (r.te ?? T_END) - r.ts : 0;
+    const pc = (v) => (100 * v / scale).toFixed(2) + "%";
+    let outcome;
+    if (r.out === "complete") outcome = `started after ${f(r.ts - r.tn, 0)} min (drive ${f(travel, 0)}, queue ${f(r.ts - r.ta, 0)}). Projected +${f(r.est - r.tn, 0)}, so the estimate was off by ${f(r.ts - r.est, 0)} min.`;
+    else if (r.out === "abandoned") outcome = `gave up after queueing ${f(r.tl - r.ta, 0)} min at ${esc(nameOf[r.sid])} (patience ${f(r.pat, 0)} min). Not charged.`;
+    else outcome = `still ${r.out.replace("unfinished_", "")} when the run ended.`;
+    const booking = key === "B" && r.bseq !== null ? ` · booking #${r.bseq}${r.ent === false ? " (lapsed)" : ""}` : "";
+    return `<div class="fate">
+      <div class="fate-head"><b><span class="sw ${cls}"></span>${label}</b><span>chose <b>${esc(nameOf[r.sid])}</b>${booking}</span></div>
+      <div class="saw"><span class="chip" style="border:0;padding-left:0">projected start:</span>${chips}</div>
+      <div class="bar" role="img" aria-label="${label}: drive ${f(travel, 0)} min, wait ${f(wait, 0)} min, charge ${f(chg, 0)} min">
+        <i class="trav" style="left:0;width:${pc(travel)}"></i>
+        <i class="wait" style="left:${pc(travel)};width:${pc(wait)}"></i>
+        ${chg ? `<i class="chg ${cls}" style="left:${pc(travel + wait)};width:${pc(chg)}"></i>` : ""}
+      </div>
+      <p class="verdict">${outcome}</p></div>`;
+  }
+
+  function drawInspect() {
+    if (selected === null) { $("#inspect").innerHTML = `<p class="who">Click a vehicle.</p>`; return; }
+    const a = P.A.by[selected], b = P.B.by[selected];
+    const end = (r) => (r.te ?? r.tl ?? T_END) - r.tn;
+    const scale = Math.max(end(a), end(b), 10);
+    $("#inspect").innerHTML =
+      `<p class="who"><b>EV ${selected}</b> · ${esc(a.veh)} · needs charging at <span class="mono">${hm(a.tn)} h</span> with <span class="mono">${f(a.soc0 * 100, 0)} %</span> charge · wants about <span class="mono">${f(a.kwh, 0)} kWh</span></p>` +
+      fateHTML("A", selected, scale) + fateHTML("B", selected, scale) +
+      `<div class="bar-key"><span class="k-trav">drive</span><span class="k-wait">queue (w)</span><span class="k-chg">charging</span><span>bar length = minutes after the request</span></div>`;
+  }
+
+  function render(t) {
+    T = Math.max(0, Math.min(T_END, t));
+    $("#clock").textContent = hm(T) + " h";
+    $("#time").value = T;
+    draw("A", T); draw("B", T); drawCounters("A", T); drawCounters("B", T); drawBoard(T);
+  }
+
+  // ---------------------------------------------------------------- interaction
+  function select(rid) { selected = rid; drawInspect(); render(T); }
+  ["A", "B"].forEach((k) => M[k].svg.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-rid]"); if (el) select(+el.dataset.rid);
+  }));
+  $("#board").addEventListener("click", (e) => { const li = e.target.closest("li[data-rid]"); if (li) select(+li.dataset.rid); });
+  $("#time").addEventListener("input", (e) => { stop(); render(+e.target.value); });
+  function stop() { playing = false; $("#play").textContent = "Play"; }
+  function tick(now) {
+    if (!playing) return;
+    if (last !== null) {
+      const next = T + (+$("#speed").value) * (now - last) / 1000;
+      render(next);
+      if (next >= T_END) { stop(); return; }
+    }
+    last = now; requestAnimationFrame(tick);
+  }
+  $("#play").addEventListener("click", () => {
+    if (playing) { stop(); return; }
+    if (T >= T_END - 0.01) render(0);
+    playing = true; last = null; $("#play").textContent = "Pause"; requestAnimationFrame(tick);
+  });
+
+  // busiest moment: largest gap in waiting vehicles between A and B
+  let busiest = 0, gap = -1;
+  for (let t = SC.t_warm; t <= SC.t_last; t += 1) {
+    const g = counters(P.A, t).queue - counters(P.B, t).queue;
+    if (g > gap) { gap = g; busiest = t; }
+  }
+  $("#busiest").addEventListener("click", () => { stop(); render(busiest); });
+
+  // default driver: visible at the opening moment, and whose access delay changed most between A and B
+  function pickDriver(onlyVisible) {
+    let best = null, bestGain = -Infinity;
+    P.A.recs.forEach((a) => {
+      const b = P.B.by[a.rid];
+      if (a.ts === null || b.ts === null || a.sid === b.sid) return;
+      if (onlyVisible && !["travel", "queue"].includes(phase(a, busiest))) return;
+      const gain = (a.ts - a.tn) - (b.ts - b.tn);
+      if (gain > bestGain) { bestGain = gain; best = a.rid; }
+    });
+    return best;
+  }
+  selected = pickDriver(true) ?? pickDriver(false);
+
+  // what the opening frame shows, in words
+  (function openingSentence() {
+    const qA = {}, idleA = [];
+    ST.forEach((st) => { qA[st.sid] = 0; });
+    let busyA = {};
+    P.A.recs.forEach((r) => { const ph = phase(r, busiest); if (ph === "queue") qA[r.sid]++; if (ph === "charge") busyA[r.sid] = (busyA[r.sid] || 0) + 1; });
+    ST.forEach((st) => { if ((busyA[st.sid] || 0) < st.c - outAt(st.sid, busiest)) idleA.push(st.name); });
+    const totA = Object.values(qA).reduce((a, b) => a + b, 0), totB = counters(P.B, busiest).queue;
+    const top = ST.slice().sort((a, b) => qA[b.sid] - qA[a.sid])[0];
+    const idleTxt = idleA.length ? `, while ${idleA.join(" and ")} ${idleA.length > 1 ? "have" : "has"} an idle charger` : "";
+    $("#lede").innerHTML += ` The replay opens at the busiest moment, <span class="mono">${hm(busiest)} h</span>: the independent side has <strong>${totA} drivers waiting</strong>, ${qA[top.sid]} of them at ${esc(top.name)}${idleTxt}. With the board, ${totB} ${totB === 1 ? "driver is" : "drivers are"} waiting.`;
+  })();
+
+  $("#ticks").innerHTML = [0, 120, 240, 360, 480, 600, 720].filter((v) => v <= T_END).map((v) => `<span>${hm(v)}${v === SC.t_warm ? " · warm-up ends" : v === SC.t_last ? " · last request" : ""}</span>`).join("");
+  $("#time").max = T_END;
+  $("#glyphs").innerHTML = [
+    `<span><svg width="14" height="14"><circle cx="7" cy="7" r="4.6" fill="var(--ink-2)"/></svg>driving to the chosen station (dashed line)</span>`,
+    `<span><svg width="14" height="14"><rect x="1" y="1" width="12" height="12" rx="2" fill="var(--ink-2)"/></svg>charger in use (white bar = session progress)</span>`,
+    `<span><svg width="14" height="14"><rect x="1.5" y="1.5" width="11" height="11" rx="2" fill="none" stroke="var(--ink-3)" stroke-dasharray="2 2"/></svg>idle charger</span>`,
+    `<span><svg width="30" height="14"><circle cx="5" cy="7" r="4" fill="var(--ink-2)"/><circle cx="15" cy="7" r="4" fill="var(--ink-2)"/><circle cx="25" cy="7" r="4" fill="var(--ink-2)"/></svg>queue (FCFS on the left, booking order on the right)</span>`,
+  ].join("");
+
+  drawInspect();
+  render(busiest);
+
+  // ---------------------------------------------------------------- results
+  const SUM = D.summary, LV = Object.keys(SUM);
+  const MET = [
+    { k: "mean_w", t: "Mean queue wait w", u: "min", nd: 2, hint: "left of zero: board waits less" },
+    { k: "p_tau", t: `Share of waits over ${TAU} min`, u: "pp", nd: 1, scale: 100, hint: "left of zero: fewer long waits" },
+    { k: "mean_d", t: "Charging-access delay d", u: "min", nd: 2, hint: "travel + queue; left of zero is better" },
+    { k: "completion", t: "Completion rate C", u: "pp", nd: 1, scale: 100, hint: "right of zero: more requests fully charged" },
+    { k: "n_abandoned", t: "Drivers who left the queue", u: "per run", nd: 2, hint: "left of zero: fewer drivers gave up" },
+    { k: "d_common", t: "Access delay, served under both", u: "min", nd: 2, hint: "same requests under both policies; left of zero is better" },
+  ];
+  const m0 = SUM[LV[0]].A_vs_B.mean_w.m;
+  $("#res-title").textContent = `${m0} matched scenarios per demand level`;
+  $("#res-intro").innerHTML = `Each scenario is generated once and run under every policy, so each policy faces exactly the same drivers, locations, charge levels and outages. The comparison uses the paired difference Δ<sub>j</sub> = y<sub>j,B</sub> − y<sub>j,A</sub> with a 95% confidence interval and a paired t-test. Mean wait and delay are over drivers who started charging; completion is over all requests, so they are always read together. Because the drivers who give up are often those who would have waited longest, delay is also compared over the requests served under both policies.`;
+
+  const sigWord = (s, lowerGood) => (s.ci_high < 0 ? (lowerGood ? "shorter" : "lower") : s.ci_low > 0 ? (lowerGood ? "longer" : "higher") : "not significantly different");
+  $("#headline").innerHTML = LV.map((lv) => {
+    const c = SUM[lv].A_vs_B, w = c.w_common, ab = c.n_abandoned, C = c.completion, d = c.d_common;
+    return `<div class="card"><h3>${LEVEL[lv]}</h3><p>Completion <span class="mono">${f(C.mean_a * 100, 1)} → ${f(C.mean_b * 100, 1)} %</span>, drivers giving up <span class="mono">${f(ab.mean_a, 1)} → ${f(ab.mean_b, 1)}</span> per run. For the ${f(d.common_share * 100, 0)} % of requests served under both, queue wait is ${sigWord(w, true)} (<span class="mono">${f(w.mean_a, 1)} → ${f(w.mean_b, 1)} min</span>) and access delay is ${sigWord(d, true)} (<span class="mono">${fs(d.mean_diff, 2)} min</span>).</p></div>`;
+  }).join("");
+
+  function niceTicks(lo, hi, n = 4) {
+    const span = hi - lo, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    const step = [1, 2, 2.5, 5, 10].map((s) => s * mag).find((s) => span / s <= n) || 10 * mag;
+    const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+    return out;
+  }
+  const tip = $("#tip");
+  function showTip(e, html) { tip.innerHTML = html; tip.hidden = false; const x = Math.min(e.clientX + 14, window.innerWidth - 300); tip.style.left = x + "px"; tip.style.top = (e.clientY + 14) + "px"; }
+  document.addEventListener("pointermove", (e) => { const el = e.target.closest && e.target.closest("[data-tip]"); if (el) showTip(e, el.dataset.tip); else tip.hidden = true; });
+
+  $("#forest").innerHTML = MET.map((mt) => {
+    const sc = mt.scale || 1, rows = [];
+    LV.forEach((lv) => {
+      ["A_vs_B", "A_vs_B_info"].forEach((cmp) => {
+        const s = SUM[lv][cmp] && SUM[lv][cmp][mt.k];
+        if (s && fin(s.mean_diff)) rows.push({ lv, cmp, d: s.mean_diff * sc, lo: s.ci_low * sc, hi: s.ci_high * sc, p: s.p_paired, s });
+      });
+    });
+    let lo = Math.min(0, ...rows.map((r) => r.lo)), hi = Math.max(0, ...rows.map((r) => r.hi));
+    const padv = (hi - lo) * 0.08 || 1; lo -= padv; hi += padv;
+    const W = 340, L = 104, Rm = 14, H = 30 + LV.length * 34 + 22;
+    const sx = (v) => L + (v - lo) / (hi - lo) * (W - L - Rm);
+    let g = "";
+    niceTicks(lo, hi).forEach((v) => {
+      g += `<line x1="${sx(v)}" x2="${sx(v)}" y1="14" y2="${H - 22}" stroke="var(--grid)"/>`;
+      g += `<text x="${sx(v)}" y="${H - 8}" text-anchor="middle" font-size="10.5" fill="var(--ink-3)" class="num">${Math.abs(v) < 1e-9 ? "0" : v}</text>`;
+    });
+    g += `<line x1="${sx(0)}" x2="${sx(0)}" y1="10" y2="${H - 22}" stroke="var(--ink-2)" stroke-width="1.2"/>`;
+    LV.forEach((lv, i) => {
+      const y = 30 + i * 34;
+      g += `<text x="0" y="${y + 4}" font-size="11.5" fill="var(--ink-2)" class="vis-label">${LEVEL[lv]}</text>`;
+      rows.filter((r) => r.lv === lv).forEach((r) => {
+        const yy = y + (r.cmp === "A_vs_B" ? -5 : 6), c = r.cmp === "A_vs_B" ? "var(--b)" : "var(--bi)";
+        const who = r.cmp === "A_vs_B" ? "B − A" : "B-info − A";
+        const better = r.s.b_better_share !== undefined ? ` · better in ${Math.round(r.s.b_better_share * r.s.m)}, tied in ${Math.round((r.s.tied_share || 0) * r.s.m)} of ${r.s.m}` : "";
+        const tipTxt = esc(`${LEVEL[lv]} · ${who}: ${fs(r.d, mt.nd)} ${mt.u} [${fs(r.lo, mt.nd)}, ${fs(r.hi, mt.nd)}] · paired p = ${r.p < 0.0001 ? "< 0.0001" : f(r.p, 4)}${better}`);
+        g += `<g data-tip="${tipTxt}"><rect x="${L}" y="${yy - 6}" width="${W - L - Rm}" height="12" fill="transparent"/>`;
+        g += `<line x1="${sx(r.lo)}" x2="${sx(r.hi)}" y1="${yy}" y2="${yy}" stroke="${c}" stroke-width="2" stroke-linecap="round"/>`;
+        g += `<circle cx="${sx(r.d)}" cy="${yy}" r="4.6" fill="${c}" stroke="var(--panel)" stroke-width="1.5"/></g>`;
+      });
+    });
+    return `<div class="card"><h3>${mt.t} <small class="num" style="font-weight:400;color:var(--ink-3)">${mt.u}</small></h3><p class="hint">${mt.hint}</p><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(mt.t)}: paired differences">${g}</svg></div>`;
+  }).join("");
+
+  const hw = SUM.normal && SUM.normal.A_vs_B.mean_w;
+  if (hw) {
+    $("#paired-note").innerHTML = `<b>Why the pairing matters.</b> At normal demand the same ${hw.m} scenario pairs give a 95% interval of ±${f(hw.ci_half_paired, 2)} min for the mean-wait difference when analysed as pairs, and ±${f(hw.ci_half_unpaired, 2)} min if the runs are treated as two independent groups (paired p ${hw.p_paired < 0.0001 ? "< 0.0001" : "= " + f(hw.p_paired, 4)}, unpaired p ${hw.p_welch < 0.0001 ? "< 0.0001" : "= " + f(hw.p_welch, 4)}). Scenario-to-scenario variation in demand dominates the spread, and pairing removes it.`;
+  }
+
+  const TB = [["mean_w", "Mean wait w (min)", 1, 2], ["p_tau", `Share w > ${TAU} min (%)`, 100, 1], ["mean_d", "Access delay d (min)", 1, 2], ["completion", "Completion C (%)", 100, 1], ["n_abandoned", "Left the queue (per run)", 1, 2], ["d_common", "Access delay, served under both (min)", 1, 2], ["w_common", "Mean wait, served under both (min)", 1, 2], ["utilisation", "Charger utilisation (%)", 100, 1], ["est_error", "Estimate error (min)", 1, 2], ["decision_us", "Decision time (µs)", 1, 1]];
+  let th = `<thead><tr><th>Level</th><th>Metric</th><th class="n">A</th><th class="n">B-info</th><th class="n">B</th><th class="n">B − A</th><th class="n">95% CI</th><th class="n">paired p</th><th class="n">B better / tied</th></tr></thead><tbody>`;
+  LV.forEach((lv) => TB.forEach(([k, lab, sc, nd]) => {
+    const s = SUM[lv].A_vs_B[k], si = SUM[lv].A_vs_B_info[k];
+    th += `<tr><td>${LEVEL[lv]}</td><td>${lab}</td><td class="n">${f(s.mean_a * sc, nd)}</td><td class="n">${f(si.mean_b * sc, nd)}</td><td class="n">${f(s.mean_b * sc, nd)}</td><td class="n">${fs(s.mean_diff * sc, nd)}</td><td class="n">[${fs(s.ci_low * sc, nd)}, ${fs(s.ci_high * sc, nd)}]</td><td class="n">${fin(s.p_paired) ? (s.p_paired < 0.0001 ? "&lt; 0.0001" : f(s.p_paired, 4)) : "–"}</td><td class="n">${Math.round(s.b_better_share * s.m)} / ${Math.round((s.tied_share || 0) * s.m)} of ${s.m}</td></tr>`;
+  }));
+  $("#res-table").innerHTML = th + "</tbody>";
+
+  // ---------------------------------------------------------------- validation
+  (function erlang() {
+    const svg = $("#erlang"), W = 600, H = 330, L = 46, Rm = 64, Tp = 16, B = 40, YMAX = 12;
+    const sx = (v) => L + v * (W - L - Rm), sy = (v) => Tp + (1 - v / YMAX) * (H - Tp - B);
+    const ec = (c, rho) => { const a = c * rho; let sum = 0, fact = 1; for (let k = 0; k < c; k++) { if (k > 0) fact *= k; sum += Math.pow(a, k) / fact; } const fc = fact * c; const tail = Math.pow(a, c) / fc / (1 - rho); return tail / (sum + tail) / (c * (1 - rho)); };
+    let g = "";
+    [0, 2, 4, 6, 8, 10, 12].forEach((v) => { g += `<line x1="${L}" x2="${W - Rm}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--grid)"/><text x="${L - 8}" y="${sy(v) + 4}" text-anchor="end" font-size="11" fill="var(--ink-3)" class="num">${v}</text>`; });
+    [0, 0.2, 0.4, 0.6, 0.8, 1].forEach((v) => { g += `<text x="${sx(v)}" y="${H - B + 18}" text-anchor="middle" font-size="11" fill="var(--ink-3)" class="num">${v.toFixed(1)}</text>`; });
+    g += `<text x="${(L + W - Rm) / 2}" y="${H - 6}" text-anchor="middle" font-size="12" fill="var(--ink-2)" class="vis-label">utilisation ρ = λ / (c μ)</text>`;
+    g += `<line x1="${L}" x2="${W - Rm}" y1="${sy(0)}" y2="${sy(0)}" stroke="var(--ink-3)"/>`;
+    const tone = { 1: 0.45, 2: 0.72, 4: 1 };
+    [1, 2, 4].forEach((c) => {
+      let d = "", lastPt = null;
+      for (let r = 0; r <= 0.985; r += 0.005) { const w = ec(c, r); if (w > YMAX) break; d += (d ? "L" : "M") + sx(r).toFixed(1) + "," + sy(w).toFixed(1); lastPt = [sx(r), sy(w)]; }
+      g += `<path d="${d}" fill="none" stroke="var(--ink)" stroke-opacity="${tone[c]}" stroke-width="2"/>`;
+      if (lastPt) g += `<text x="${lastPt[0] + 6}" y="${lastPt[1] + 4}" font-size="11.5" fill="var(--ink-2)" class="vis-label">c = ${c}</text>`;
+    });
+    D.erlang.forEach((v) => {
+      const x = sx(v.rho) + (v.c === 1 ? -7 : v.c === 4 ? 7 : 0);
+      const tipTxt = esc(`c = ${v.c}, ρ = ${v.rho}: Erlang C ${f(v.analytic_wq, 3)} · simulated ${f(v.sim_wq, 3)} [${f(v.ci_low, 3)}, ${f(v.ci_high, 3)}]`);
+      g += `<g data-tip="${tipTxt}"><rect x="${x - 8}" y="${sy(Math.min(YMAX, v.ci_high)) - 4}" width="16" height="${sy(v.ci_low) - sy(Math.min(YMAX, v.ci_high)) + 8}" fill="transparent"/>`;
+      g += `<line x1="${x}" x2="${x}" y1="${sy(Math.min(YMAX, v.ci_high))}" y2="${sy(v.ci_low)}" stroke="var(--ink)" stroke-opacity="${tone[v.c]}" stroke-width="1.6"/>`;
+      g += `<circle cx="${x}" cy="${sy(v.sim_wq)}" r="4.2" fill="var(--panel)" stroke="var(--ink)" stroke-opacity="${tone[v.c]}" stroke-width="2"/></g>`;
+    });
+    svg.innerHTML = g;
+    const inside = D.erlang.filter((v) => v.ci_low <= v.analytic_wq && v.analytic_wq <= v.ci_high).length;
+    const c2a = D.erlang.find((v) => v.c === 2 && v.rho === 0.5), c2b = D.erlang.find((v) => v.c === 2 && v.rho === 0.9);
+    $("#erlang-note").innerHTML = `Lines: Erlang C formula. Circles: simulator, 150,000 arrivals each, 95% batch-means interval. The formula value lies inside the interval in ${inside} of ${D.erlang.length} cases. With two chargers, going from ρ = 0.5 to 0.9 multiplies the mean wait by ${c2a && c2b ? f(c2b.analytic_wq / c2a.analytic_wq, 1) : "–"}×, the figure used in the interim presentation.`;
+  })();
+
+  const TNAME = {
+    test_erlang_c_reference_values: "Erlang C gives the thesis figure values (0.333 and 4.263, ratio 12.8×)",
+    test_single_station_matches_erlang_c: "One simulated M/M/2 station matches Erlang C",
+    test_capacity_never_exceeded: "Capacity never exceeded, outages included",
+    test_fcfs_order_kept: "FCFS order kept at every station",
+    test_faster_charger_same_energy_less_time: "Faster charger: same energy, less time (old issue 1)",
+    test_energy_balance: "Energy balance from request to end of charging",
+    test_toy_herding_matches_background_figure: "Herding toy case reproduces the background figure",
+    test_booking_contract: "Booking order, tolerance and expiry follow the contract",
+    test_entitled_vehicles_served_before_lapsed_ones: "Valid bookings served before lapsed ones",
+    test_outage_reduces_capacity: "An outage removes a charger from service",
+    test_scenarios_reproducible_and_policy_independent: "Scenarios reproducible and identical for every policy (old issue 2)",
+    test_runs_are_repeatable: "Same scenario and policy give identical results",
+    test_empty_denominator_is_undefined_not_zero: "Empty denominator reported as undefined, not zero",
+    test_only_requests_in_the_measurement_window_are_counted: "Only requests after the warm-up are measured",
+    test_reduced_capacity_outage_lasts_the_whole_run: "Reduced capacity: 3 chargers out for the whole run",
+    test_patience_within_the_fixed_range: "Driver patience stays within the fixed range",
+    test_defer_is_just_in_time_departure: "Defer: an EV that would queue anyway waits at its own spot; same start, less queueing",
+    test_deferral_counts_from_the_original_request: "Deferral time counts in d, from the original request",
+    test_deferring_vehicle_books_only_when_it_commits: "A deferring EV books only when it commits",
+    test_deferral_uses_up_patience: "Deferral time uses up the driver's patience",
+    test_no_deferral_allowed_gives_the_base_policy: "With no deferrals allowed, A_d equals A and B_d equals B",
+    test_pettingzoo_api: "PettingZoo's own api_test passes",
+    test_rule_policies_identical_through_pettingzoo: "All five policies give identical runs through PettingZoo",
+    test_reward_is_minus_access_delay: "Agent reward equals minus the access delay",
+    test_random_agents_respect_masks_and_capacity: "Random agents: masks, capacity and deferral limit respected",
+    test_defer_only_where_allowed: "Defer action offered only in A_d and B_d",
+    test_illegal_action_falls_back_and_is_flagged: "An illegal action falls back to the rule and is flagged",
+    test_observation_matches_space: "Observations stay inside the declared space",
+    test_ppo_gradients_match_finite_differences: "PPO gradients match finite differences",
+    test_masked_actions_get_zero_probability: "PPO never picks a masked action",
+    test_gae_with_terminal_reward_only: "Advantages along one EV's decisions are correct",
+    test_short_training_run_and_save_load: "Training runs; a saved policy reloads with identical decisions",
+  };
+  const groups = {};
+  (D.tests || []).forEach((t) => { const base = t.name.split("[")[0]; (groups[base] = groups[base] || { n: 0, ok: 0 }); groups[base].n++; if (t.passed) groups[base].ok++; });
+  const total = (D.tests || []).length, passed = (D.tests || []).filter((t) => t.passed).length;
+  $("#test-sum").textContent = total ? `${passed} of ${total} passed` : "not run";
+  $("#tests").innerHTML = total ? Object.entries(groups).map(([k, g]) => {
+    const ok = g.ok === g.n;
+    return `<li><span class="${ok ? "ok" : "no"}" aria-label="${ok ? "passed" : "failed"}">${ok ? "✓" : "✗"}</span><span>${esc(TNAME[k] || k)}</span><span class="cnt">${g.ok}/${g.n}</span></li>`;
+  }).join("") : `<li><span></span><span>Tests were skipped for this run (--skip-tests).</span><span></span></li>`;
+  const toy = D.toy;
+  const pills = (arr) => arr.map((s, i) => `<span class="pill">EV${i + 1} → ${s}</span>`).join("");
+  $("#toy").innerHTML = `<b>Toy case from the background chapter</b><span class="board-note" style="margin:0">Three EVs request 0.1 min apart from the same spot; station A is 2.6 min away, B 7.8 min; one charger each.</span>
+    <div class="toy-row"><span class="lbl"><span class="sw a"></span>Independent</span>${pills(toy.independent)}<span class="mono">mean wait ${f(toy.w_independent, 1)} min</span></div>
+    <div class="toy-row"><span class="lbl"><span class="sw b"></span>Reservation board</span>${pills(toy.board)}<span class="mono">mean wait ${f(toy.w_board, 1)} min</span></div>`;
+
+  // ---------------------------------------------------------------- defer
+  (function deferSection() {
+    const C = D.config;
+    if (C.defer_step) { $("#defer-step").textContent = C.defer_step; $("#defer-max").textContent = C.max_defer; }
+    let t = `<thead><tr><th>Level</th><th>Policy</th><th class="n">EVs deferring</th><th class="n">Mean wait w (min)</th><th class="n">w &gt; ${TAU} min</th><th class="n">Access delay d (min)</th><th class="n">Δd vs base [95% CI]</th><th class="n">Completion</th><th class="n">Left queue</th></tr></thead><tbody>`;
+    LV.forEach((lv) => {
+      [["A", "A_d"], ["B", "B_d"]].forEach(([base, dd]) => {
+        const c = SUM[lv][`${base}_vs_${dd}`];
+        if (!c) return;
+        const line = (lab, side) => {
+          const g = (k) => c[k][side === "a" ? "mean_a" : "mean_b"];
+          const dd_ = side === "b" ? `${fs(c.mean_d.mean_diff, 2)} [${fs(c.mean_d.ci_low, 2)}, ${fs(c.mean_d.ci_high, 2)}]` : "–";
+          return `<tr><td>${LEVEL[lv]}</td><td>${lab}</td><td class="n">${f(g("defer_share") * 100, 0)} %</td><td class="n">${f(g("mean_w"), 2)}</td><td class="n">${f(g("p_tau") * 100, 1)} %</td><td class="n">${f(g("mean_d"), 2)}</td><td class="n">${dd_}</td><td class="n">${f(g("completion") * 100, 1)} %</td><td class="n">${f(g("n_abandoned"), 2)}</td></tr>`;
+        };
+        t += line(base, "a") + line(dd, "b");
+      });
+    });
+    $("#defer-table").innerHTML = t + "</tbody>";
+    const h = SUM.high && SUM.high.B_vs_B_d, a = SUM.high && SUM.high.A_vs_A_d;
+    if (h && a) {
+      const dsig = h.mean_d.ci_low > 0 ? "rises" : h.mean_d.ci_high < 0 ? "falls" : "does not change significantly";
+      $("#defer-note").innerHTML = `<b>Read w and d together.</b> At high demand, deferral with the board (B → B_d) cuts mean queue wait from ${f(h.mean_w.mean_a, 1)} to ${f(h.mean_w.mean_b, 1)} min and waits over ${TAU} min from ${f(h.p_tau.mean_a * 100, 0)} % to ${f(h.p_tau.mean_b * 100, 0)} %, but access delay d ${dsig} (${fs(h.mean_d.mean_diff, 2)} min [${fs(h.mean_d.ci_low, 2)}, ${fs(h.mean_d.ci_high, 2)}]). The waiting moves from the station queue to wherever the driver is. Completion changes by ${fs(h.completion.mean_diff * 100, 1)} pp [${fs(h.completion.ci_low * 100, 1)}, ${fs(h.completion.ci_high * 100, 1)}], since time spent deferring uses up the driver's patience. Charging times are known in advance here, so a short wait rarely brings information that changes the choice. Without the board (A → A_d), EVs cannot see the cars already on their way, so they see fewer queues coming and only ${f(a.defer_share.mean_b * 100, 0)} % defer.`;
+    }
+  })();
+
+  // ---------------------------------------------------------------- learned policy
+  (function ppoSection() {
+    const P = D.ppo || {};
+    const settings = Object.keys(P);
+    if (!settings.length) {
+      $("#ppo-note").textContent = "No trained models were found for this run. Train them with python train_ppo.py, then run python run_demo.py again.";
+      $("#learned .tbl-wrap").hidden = true;
+      return;
+    }
+    const first = P[settings[0]], tr = first.train[0] || {};
+    const eps = (tr.updates || 0) * (tr.episodes_per_update || 0);
+    $("#ppo-intro").innerHTML += ` Training: ${first.seeds.length} seeds × ${eps.toLocaleString("en")} episodes each, about ${f((tr.train_seconds || 0) / 60, 0)} min per seed on a laptop CPU.`;
+    const tone = [1, 0.62, 0.38];
+    $("#ppo-curves").innerHTML = settings.map((st) => {
+      const rep = P[st], W = 340, H = 190, L = 34, R = 10, T = 12, B = 26;
+      const smooth = (a, k = 25) => a.map((_, i) => { const s = a.slice(Math.max(0, i - k + 1), i + 1); return s.reduce((x, y) => x + y, 0) / s.length; });
+      const curves = rep.curves.map((c) => ({ seed: c.seed, u: c.update, d: smooth(c.mean_d) }));
+      if (!curves.length) return "";
+      const umax = Math.max(...curves.map((c) => c.u[c.u.length - 1]));
+      const all = curves.flatMap((c) => c.d.slice(10)).concat(rep.rule_train_d ? [rep.rule_train_d] : []);
+      let lo = Math.floor(Math.min(...all) - 0.5), hi = Math.ceil(Math.max(...all) + 0.5);
+      const sx = (u) => L + (u / umax) * (W - L - R), sy = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+      const col = st.startsWith("B") ? "var(--b)" : "var(--a)";
+      let g = "";
+      niceTicks(lo, hi, 4).forEach((v) => { g += `<line x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--grid)"/><text x="${L - 6}" y="${sy(v) + 4}" text-anchor="end" font-size="10.5" fill="var(--ink-3)" class="num">${v}</text>`; });
+      niceTicks(0, umax, 4).forEach((v) => { g += `<text x="${sx(v)}" y="${H - 8}" text-anchor="middle" font-size="10.5" fill="var(--ink-3)" class="num">${v}</text>`; });
+      if (rep.rule_train_d) g += `<line x1="${L}" x2="${W - R}" y1="${sy(rep.rule_train_d)}" y2="${sy(rep.rule_train_d)}" stroke="${col}" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${W - R}" y="${sy(rep.rule_train_d) + 14}" text-anchor="end" font-size="10.5" fill="var(--ink-2)" class="vis-label">rule ${esc(st)}: ${f(rep.rule_train_d, 1)} min</text>`;
+      curves.forEach((c, i) => {
+        const pts = c.u.map((u, j) => `${sx(u).toFixed(1)},${sy(Math.min(hi, Math.max(lo, c.d[j]))).toFixed(1)}`).filter((_, j) => j % 2 === 0).join(" ");
+        g += `<polyline points="${pts}" fill="none" stroke="var(--ink)" stroke-opacity="${tone[i % 3]}" stroke-width="1.6"/>`;
+      });
+      return `<div class="card"><h3>Training: setting ${esc(st)} <small class="num" style="font-weight:400;color:var(--ink-3)">mean d (min)</small></h3><p class="hint">${curves.length} seeds on training scenarios, moving average of 25 updates. Training samples exploratory actions, so the curves sit above the final greedy policy. Dashed: the ${esc(st)} rule on training scenarios. x: update.</p><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Training curves for setting ${esc(st)}">${g}</svg></div>`;
+    }).join("");
+
+    let t = `<thead><tr><th>Level</th><th>Setting</th><th>Policy</th><th class="n">Access delay d (min)</th><th class="n">Mean wait w (min)</th><th class="n">Completion</th><th class="n">Left queue</th><th class="n">EVs deferring</th><th class="n">PPO − rule, d [95% CI]</th></tr></thead><tbody>`;
+    LV.forEach((lv) => settings.forEach((st) => {
+      const L_ = P[st].levels[lv];
+      if (!L_) return;
+      [st, "PPO"].forEach((key) => {
+        const mm = L_.means[key], s = L_.vs[st].mean_d;
+        const cmp = key === "PPO" ? `${fs(s.mean_diff, 2)} [${fs(s.ci_low, 2)}, ${fs(s.ci_high, 2)}]` : "–";
+        t += `<tr><td>${LEVEL[lv]}</td><td>${esc(st)}</td><td>${key === "PPO" ? "PPO (learned)" : "rule"}</td><td class="n">${f(mm.mean_d, 2)}</td><td class="n">${f(mm.mean_w, 2)}</td><td class="n">${f(mm.completion * 100, 1)} %</td><td class="n">${f(mm.n_abandoned, 2)}</td><td class="n">${f(mm.defer_share * 100, 0)} %</td><td class="n">${cmp}</td></tr>`;
+      });
+    }));
+    $("#ppo-table").innerHTML = t + "</tbody>";
+
+    const sig = (s) => (s.ci_high < 0 ? "lower" : s.ci_low > 0 ? "higher" : "no significant difference");
+    const ci = (s) => `${fs(s.mean_diff, 2)} [${fs(s.ci_low, 2)}, ${fs(s.ci_high, 2)}]`;
+    const parts = settings.map((st) => {
+      const h = P[st].levels.high;
+      if (!h) return "";
+      const s = h.vs[st].mean_d, defer = f(h.means.PPO.defer_share * 100, 0);
+      const left = `${f(h.means.PPO.n_abandoned, 2)} drivers per run give up against ${f(h.means[st].n_abandoned, 2)}`;
+      if (st.startsWith("B")) {
+        return `With the board (${esc(st)}), at high demand, the learned policy's access delay is ${f(h.means.PPO.mean_d, 1)} min against ${f(h.means[st].mean_d, 1)} min for the rule (${sig(s)}, ${ci(s)}); ${left}, and ${defer} % of its EVs defer.`;
+      }
+      const vb = h.vs.B ? h.vs.B.mean_d : null;
+      return `Without the board (${esc(st)}), at high demand, the learned policy reaches ${f(h.means.PPO.mean_d, 1)} min against ${f(h.means[st].mean_d, 1)} min for the rule (${sig(s)}, ${ci(s)})${vb ? ` and stays above the reservation board B (${f(h.means.B.mean_d, 1)} min; ${ci(vb)})` : ""}; ${left}.`;
+    }).filter(Boolean);
+    $("#ppo-note").innerHTML = `<b>What the learned policy shows.</b> ${parts.join(" ")} Learning does not replace the board's information, and neither learned policy uses deferral. Results are the mean of ${first.seeds.length} training seeds; per-seed results are in results/ppo/.`;
+  })();
+
+  // ---------------------------------------------------------------- sensitivity
+  (function sensSection() {
+    const S = D.sensitivity;
+    if (!S) { $("#sensitivity").hidden = true; return; }
+    const pv = (x) => (fin(x) ? (x < 0.0001 ? "&lt; 0.0001" : f(x, 4)) : "–");
+    let t = `<thead><tr><th class="n">ρ</th><th class="n">Utilisation</th><th class="n">Completion A → B</th><th class="n">Give-ups A → B</th><th class="n">Delay, served under both: B − A [95% CI]</th></tr></thead><tbody>`;
+    S.rho.forEach((r) => {
+      const fixed = Object.values(D.config.levels).some((l) => Math.abs(l.rho - r.rho) < 1e-9 && !l.outage_chargers);
+      t += `<tr><td class="n">${f(r.rho, 2)}${fixed ? " *" : ""}</td><td class="n">${f(r.A.utilisation * 100, 0)} %</td><td class="n">${f(r.A.completion * 100, 1)} → ${f(r.B.completion * 100, 1)} %</td><td class="n">${f(r.A.n_abandoned, 1)} → ${f(r.B.n_abandoned, 1)}</td><td class="n">${fs(r.d_common.mean_diff, 2)} [${fs(r.d_common.ci_low, 2)}, ${fs(r.d_common.ci_high, 2)}]</td></tr>`;
+    });
+    $("#sens-rho").innerHTML = t + "</tbody>";
+    t = `<thead><tr><th>Patience</th><th class="n">Completion A → B</th><th class="n">Give-ups A → B</th><th class="n">Delay, served under both: B − A</th></tr></thead><tbody>`;
+    S.patience.forEach((r) => {
+      t += `<tr><td>${r.patience[0]}–${r.patience[1]} min${r.fixed ? " *" : ""}</td><td class="n">${f(r.A.completion * 100, 1)} → ${f(r.B.completion * 100, 1)} %</td><td class="n">${f(r.A.n_abandoned, 1)} → ${f(r.B.n_abandoned, 1)}</td><td class="n">${fs(r.d_common.mean_diff, 2)} [${fs(r.d_common.ci_low, 2)}, ${fs(r.d_common.ci_high, 2)}]</td></tr>`;
+    });
+    $("#sens-pat").innerHTML = t + "</tbody>";
+    t = `<thead><tr><th>Level</th>${S.tau[LV[0]].map((x) => `<th class="n">w &gt; ${x.tau} min${x.fixed ? " *" : ""}: A → B</th>`).join("")}</tr></thead><tbody>`;
+    LV.forEach((lv) => {
+      t += `<tr><td>${LEVEL[lv]}</td>${S.tau[lv].map((x) => `<td class="n">${f(x.A * 100, 1)} → ${f(x.B * 100, 1)} %</td>`).join("")}</tr>`;
+    });
+    $("#sens-tau").innerHTML = t + "</tbody>";
+    const always = S.rho.every((r) => r.completion.ci_low > 0) && S.patience.every((r) => r.completion.ci_low > 0);
+    const hiT = S.tau.high || S.tau[LV[0]], t5 = hiT[0], t30 = hiT[hiT.length - 1];
+    $("#sens-note").innerHTML = `<b>What holds.</b> ${always ? "The board raises completion at every demand level and every patience range tested." : "The board's effect on completion varies across the tested values; see the tables."} Its effect on delay depends on load: at low demand it shortens delay, under heavy load it lengthens delay for the drivers served under both, because it sends them to farther stations. The waiting threshold changes the picture too: at high demand the board gives more waits over ${t5.tau} min (${f(t5.A * 100, 0)} → ${f(t5.B * 100, 0)} %) but fewer over ${t30.tau} min (${f(t30.A * 100, 1)} → ${f(t30.B * 100, 1)} %). * fixed value.`;
+  })();
+
+  // ---------------------------------------------------------------- pettingzoo
+  (function envSection() {
+    const E = D.env_check;
+    if (!E || !E.available) { $("#env-note").textContent = "PettingZoo was not installed for this run."; return; }
+    $("#env-scn").textContent = `${LEVEL[E.level]} · #${E.index}`;
+    let t = `<thead><tr><th>Setting</th><th class="n">Decisions</th><th class="n">Agents</th><th>Compared with the direct run</th></tr></thead><tbody>`;
+    E.settings.forEach((s) => {
+      t += `<tr><td>${esc(s.setting)}</td><td class="n">${s.decisions}</td><td class="n">${s.agents}</td><td>${s.identical ? '<span class="ok-t">✓ identical</span>' : '<span class="no-t">✗ differs</span>'}</td></tr>`;
+    });
+    $("#env-table").innerHTML = t + "</tbody>";
+    const r = E.random;
+    $("#env-note").innerHTML = `Each rule-based policy chose its actions through the PettingZoo interface, and every metric matched the direct simulation. Random agents restricted to legal actions on B_d reach a mean access delay of ${f(r.mean_d, 1)} min and ${f(r.completion * 100, 1)} % completion, against ${f(r.rule_mean_d, 1)} min and ${f(r.rule_completion * 100, 1)} % for the B_d rule. Any controller can drive the environment, and the rules give a learned policy a meaningful baseline.`;
+  })();
+
+  $("#foot").innerHTML = `Generated ${esc(D.generated)} by run_demo.py · base seed ${D.config.seed} · ${D.config.m} scenarios per level · replayed scenario digest ${esc(SC.digest)}. All scenarios are synthetic.`;
+})();
+</script>
